@@ -1,0 +1,12 @@
+
+"C:\\log\\error.log
+C:/log/web.log
+/.idea/
+/target/
+C:/log
+*.log
+
+/MavenProject.iml
+C/\log\error.log
+/.idea/developing.iml
+.DS_Store
