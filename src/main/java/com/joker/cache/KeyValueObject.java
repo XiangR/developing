@@ -2,32 +2,42 @@ package com.joker.cache;
 
 import java.util.Objects;
 
-public class KeyValueObject<T> {
+public class KeyValueObject<T, R> {
 
-    private String key;
+    private T key;
 
-    private T object;
+    private R value;
 
     private long tag;
 
     private int logicalExpireSeconds;
 
-    private String className;
+    private String keyClassName;
 
-    public String getKey() {
+    private String objClassName;
+
+    public T getKey() {
         return key;
     }
 
-    public void setKey(String key) {
+    public void setKey(T key) {
         this.key = key;
     }
 
-    public T getObject() {
-        return object;
+    public R getValue() {
+        return value;
     }
 
-    public void setObject(T object) {
-        this.object = object;
+    public void setValue(R value) {
+        this.value = value;
+    }
+
+    public long getTag() {
+        return tag;
+    }
+
+    public void setTag(long tag) {
+        this.tag = tag;
     }
 
     public int getLogicalExpireSeconds() {
@@ -38,15 +48,25 @@ public class KeyValueObject<T> {
         this.logicalExpireSeconds = logicalExpireSeconds;
     }
 
-
-    public long getTag() {
-        return tag;
+    public String getKeyClassName() {
+        return keyClassName;
     }
 
-    public void setTag(long tag) {
-        this.tag = tag;
+    public void setKeyClassName(String keyClassName) {
+        this.keyClassName = keyClassName;
     }
 
+    public String getObjClassName() {
+        return objClassName;
+    }
+
+    public void setObjClassName(String objClassName) {
+        this.objClassName = objClassName;
+    }
+
+    /**
+     * 当前 key 是否逻辑过期
+     */
     public boolean isLogicExpire() {
         if (logicalExpireSeconds < 0) {
             return false;
@@ -55,27 +75,16 @@ public class KeyValueObject<T> {
         }
     }
 
-    public String getClassName() {
-        return className;
-    }
-
-    public void setClassName(String className) {
-        this.className = className;
-    }
-
     @Override
     public boolean equals(Object o) {
-        if (this == o)
-            return true;
-        if (o == null || getClass() != o.getClass())
-            return false;
-        KeyValueObject that = (KeyValueObject) o;
+        if (this == o) return true;
+        if (!(o instanceof KeyValueObject)) return false;
+        KeyValueObject<?, ?> that = (KeyValueObject<?, ?>) o;
         return Objects.equals(key, that.key);
     }
 
     @Override
     public int hashCode() {
-
         return Objects.hash(key);
     }
 }
