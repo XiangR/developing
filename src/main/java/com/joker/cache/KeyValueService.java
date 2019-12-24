@@ -40,7 +40,7 @@ public class KeyValueService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(KeyValueService.class);
 
-    private static final Object PRESENT = new Object();
+    private static final String NX = "NX";
 
     private static final String KEY_VALUE_MULTI_REFRESH = "KeyValueMultiRefresh";
 
@@ -308,7 +308,7 @@ public class KeyValueService {
         }
 
         List<T> keyList = paramList.stream().distinct().filter(Objects::nonNull).collect(Collectors.toList());
-        if (CollectionUtils.isNotEmpty(keyList)) {
+        if (CollectionUtils.isEmpty(keyList)) {
             return Maps.newLinkedHashMap();
         }
 
@@ -503,7 +503,7 @@ public class KeyValueService {
         }
         for (T key : keyList) {
             StoreKey storeKey = new StoreKey(category, getNXKey(folder, key));
-            Boolean setnx = redis.setnx(storeKey, PRESENT, 10);
+            Boolean setnx = redis.setnx(storeKey, NX, 10);
             if (Objects.equals(Boolean.TRUE, setnx)) {
                 activeKeyList.add(storeKey);
                 newKeyList.add(key);
