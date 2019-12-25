@@ -160,8 +160,9 @@ public class KeyValueService {
         if (CollectionUtils.isEmpty(keyList)) {
             return;
         }
-        for (T key : keyList) {
-            redis.delete(new StoreKey(category, getRealKey(folder, key)));
+        List<StoreKey> storeKeyList = getStoreKeyList(category, folder, keyList);
+        for (StoreKey storeKey : storeKeyList) {
+            redis.delete(storeKey);
         }
     }
 
@@ -189,11 +190,9 @@ public class KeyValueService {
         if (CollectionUtils.isEmpty(keys)) {
             return Lists.newArrayList();
         }
-        List<StoreKey> keyList = Lists.newArrayList();
-        for (T key : keys) {
-            keyList.add(new StoreKey(category, getRealKey(folder, key)));
-        }
-        return mget(keyList, type);
+        List<StoreKey> storeKeyList = getStoreKeyList(category, folder, keys);
+        Map<StoreKey, String> resultMap = redis.multiGet(storeKeyList);
+        return parseRes(resultMap, type);
     }
 
     /**
@@ -319,14 +318,14 @@ public class KeyValueService {
         reloadCachedLogicExpire(category, folder, firstRes, logicalExpireSeconds, physicalExpireSeconds, func);
 
         Map<T, R> finalRes = Maps.newLinkedHashMap();
-        finalRes.putAll(firstRes.stream().collect(Collectors.toMap(KeyValueObject::getKey, KeyValueObject::getValue, (v1, v2) -> v1)));
+        finalRes.putAll(firstRes.stream().filter(Objects::nonNull).collect(Collectors.toMap(KeyValueObject::getKey, KeyValueObject::getValue, (v1, v2) -> v1)));
 
         // invoke and mset
-        List<T> secondQueryKeyList = Lists.newArrayList(CollectionUtils.subtract(keyList,
+        List<T> noCacheKeyList = Lists.newArrayList(CollectionUtils.subtract(keyList,
                 firstRes.stream().filter(Objects::nonNull).map(KeyValueObject::getKey).collect(Collectors.toList())
         ));
-        if (CollectionUtils.isNotEmpty(secondQueryKeyList)) {
-            Map<T, R> secondRes = invokeAndReload(category, folder, secondQueryKeyList, logicalExpireSeconds, physicalExpireSeconds, cacheNullable, func);
+        if (CollectionUtils.isNotEmpty(noCacheKeyList)) {
+            Map<T, R> secondRes = invokeAndRefresh(category, folder, noCacheKeyList, logicalExpireSeconds, physicalExpireSeconds, cacheNullable, func);
             finalRes.putAll(secondRes);
         }
         return finalRes;
@@ -336,27 +335,35 @@ public class KeyValueService {
 
     // region 私有方法
 
-    private <T, R> Map<T, R> invokeAndReload(String category,
-                                             String folder,
-                                             List<T> keyList,
-                                             int logicalExpireSeconds,
-                                             int physicalExpireSeconds,
-                                             boolean cacheNullable,
-                                             Function<List<T>, Map<T, R>> func
+    private <T, R> Map<T, R> invokeAndRefresh(String category,
+                                              String folder,
+                                              List<T> keyList,
+                                              int logicalExpireSeconds,
+                                              int physicalExpireSeconds,
+                                              boolean cacheNullable,
+                                              Function<List<T>, Map<T, R>> func
     ) {
         if (CollectionUtils.isEmpty(keyList)) {
             return Maps.newLinkedHashMap();
         }
+        List<T> invokeResKeyList = Lists.newArrayList();
         Map<T, R> invokeRes = func.apply(keyList);
-        invokeRes = invokeRes == null ? Maps.newLinkedHashMap() : invokeRes;
+        Map<T, R> finalRes = Maps.newLinkedHashMap();
+        if (MapUtils.isNotEmpty(invokeRes)) {
+            finalRes.putAll(invokeRes);
+            invokeResKeyList.addAll(invokeRes.keySet());
+        }
+        // 顽固穿透 key 可以 cache null value
         if (cacheNullable) {
-            Collection<T> unCache = CollectionUtils.subtract(keyList, invokeRes.keySet());
+            Collection<T> unCache = CollectionUtils.subtract(keyList, invokeResKeyList);
             for (T key : unCache) {
-                invokeRes.put(key, null);
+                finalRes.put(key, null);
             }
         }
-        refreshList(category, folder, invokeRes, logicalExpireSeconds, physicalExpireSeconds);
-        return invokeRes;
+        EXECUTOR.execute(
+                () -> refreshList(category, folder, finalRes, logicalExpireSeconds, physicalExpireSeconds)
+        );
+        return finalRes;
     }
 
     private <T, R> void reloadCachedLogicExpire(String category,
@@ -411,21 +418,23 @@ public class KeyValueService {
         });
     }
 
-    private <T, R> void msetInner(String category, String folder, Map<T, R> keyValue, int expireInSeconds) {
-        Map<StoreKey, String> cacheMap = Maps.newLinkedHashMap();
-        for (Map.Entry<T, R> entry : keyValue.entrySet()) {
-            StoreKey key = new StoreKey(category, getRealKey(folder, entry.getKey()));
-            cacheMap.put(key, JSON.toJSONString(entry.getValue(), SerializerFeature.WriteClassName, SerializerFeature.DisableCircularReferenceDetect));
+    private <T> void processSetNX(String category,
+                                  String folder,
+                                  List<T> keyList,
+                                  List<T> newKeyList,
+                                  List<StoreKey> activeKeyList
+    ) {
+        if (CollectionUtils.isEmpty(keyList)) {
+            return;
         }
-        Set<StoreKey> keyList = cacheMap.keySet();
-        DataUtil.partitionInvoke(keyList, (thisList) -> {
-            Map<StoreKey, String> innerCache = Maps.newLinkedHashMap();
-            for (StoreKey storeKey : thisList) {
-                innerCache.put(storeKey, cacheMap.get(storeKey));
+        for (T key : keyList) {
+            StoreKey storeKey = new StoreKey(category, getNXKey(folder, key));
+            Boolean setnx = redis.setnx(storeKey, NX, 10);
+            if (Objects.equals(Boolean.TRUE, setnx)) {
+                activeKeyList.add(storeKey);
+                newKeyList.add(key);
             }
-            redis.multiSet(innerCache, expireInSeconds);
-            return null;
-        }, 1000);
+        }
     }
 
     private <T, R> List<KeyValueObject<T, R>> mgetInner(String category, String folder, List<T> keyList) {
@@ -433,12 +442,10 @@ public class KeyValueService {
             return Lists.newLinkedList();
         }
         try {
-            List<String> bodyList = mget(category, folder, keyList);
+            List<String> bodyList = mget(category, folder, keyList, String.class);
             List<KeyValueObject<T, R>> result = Lists.newLinkedList();
             for (String body : bodyList) {
-                if (StringUtils.isBlank(body)) {
-                    result.add(null);
-                } else {
+                if (StringUtils.isNotBlank(body)) {
                     KeyValueObject<T, R> t = JSON.parseObject(body, new TypeReference<KeyValueObject<T, R>>() {
                     });
                     result.add(t);
@@ -448,24 +455,6 @@ public class KeyValueService {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
-    }
-
-    /**
-     * 获取多个字符串内容
-     *
-     * @param folder 文件夹名称
-     * @param keys   主键集合
-     */
-    private <T> List<String> mget(String category, String folder, List<T> keys) {
-        if (CollectionUtils.isEmpty(keys)) {
-            return Lists.newLinkedList();
-        }
-        List<StoreKey> keyList = getStoreKeyList(category, folder, keys);
-
-        return DataUtil.partitionInvoke(keyList, (thisList) -> {
-            Map<StoreKey, String> resultMap = redis.multiGet(keyList);
-            return Lists.newLinkedList(resultMap.values());
-        }, 1000);
     }
 
     private <T, R> void refreshList(String category, String folder, Map<T, R> keyValues, int logicalExpireSeconds, int physicalExpireSeconds) {
@@ -492,42 +481,21 @@ public class KeyValueService {
         }
     }
 
-    private <T> void processSetNX(String category,
-                                  String folder,
-                                  List<T> keyList,
-                                  List<T> newKeyList,
-                                  List<StoreKey> activeKeyList
-    ) {
-        if (CollectionUtils.isEmpty(keyList)) {
-            return;
+    private <T, R> void msetInner(String category, String folder, Map<T, R> keyValue, int expireInSeconds) {
+        Map<StoreKey, String> cacheMap = Maps.newLinkedHashMap();
+        for (Map.Entry<T, R> entry : keyValue.entrySet()) {
+            StoreKey key = new StoreKey(category, getRealKey(folder, entry.getKey()));
+            cacheMap.put(key, JSON.toJSONString(entry.getValue(), SerializerFeature.WriteClassName, SerializerFeature.DisableCircularReferenceDetect));
         }
-        for (T key : keyList) {
-            StoreKey storeKey = new StoreKey(category, getNXKey(folder, key));
-            Boolean setnx = redis.setnx(storeKey, NX, 10);
-            if (Objects.equals(Boolean.TRUE, setnx)) {
-                activeKeyList.add(storeKey);
-                newKeyList.add(key);
+        Set<StoreKey> keyList = cacheMap.keySet();
+        DataUtil.partitionInvoke(keyList, (thisList) -> {
+            Map<StoreKey, String> innerCache = Maps.newLinkedHashMap();
+            for (StoreKey storeKey : thisList) {
+                innerCache.put(storeKey, cacheMap.get(storeKey));
             }
-        }
-    }
-
-    private <T> List<StoreKey> getStoreKeyList(String category, String folder, List<T> keys) {
-        if (CollectionUtils.isEmpty(keys)) {
-            return Lists.newLinkedList();
-        }
-        List<StoreKey> keyList = Lists.newLinkedList();
-        for (T key : keys) {
-            keyList.add(new StoreKey(category, getRealKey(folder, key)));
-        }
-        return keyList;
-    }
-
-    private <R> List<R> mget(List<StoreKey> keyList, Class<R> type) {
-        if (CollectionUtils.isEmpty(keyList)) {
-            return Lists.newArrayList();
-        }
-        Map<StoreKey, String> resultMap = redis.multiGet(keyList);
-        return parseRes(resultMap, type);
+            redis.multiSet(innerCache, expireInSeconds);
+            return null;
+        }, 1000);
     }
 
     private <R> List<R> parseRes(Map<StoreKey, String> resultMap, Class<R> type) {
@@ -565,6 +533,17 @@ public class KeyValueService {
         return res;
     }
 
+    private <T> List<StoreKey> getStoreKeyList(String category, String folder, List<T> keys) {
+        if (CollectionUtils.isEmpty(keys)) {
+            return Lists.newLinkedList();
+        }
+        List<StoreKey> keyList = Lists.newLinkedList();
+        for (T key : keys) {
+            keyList.add(new StoreKey(category, getRealKey(folder, key)));
+        }
+        return keyList;
+    }
+
     private <T> String getRealKey(String folder, T key) {
         String s = key.toString();
         return folder != null
@@ -580,5 +559,4 @@ public class KeyValueService {
     }
 
     // endregion
-
 }
