@@ -2,7 +2,7 @@ package com.joker.utils.redis;
 
 import com.alibaba.fastjson.JSON;
 import com.google.common.collect.Lists;
-import com.joker.entity.Func;
+import com.joker.entity.Func1;
 import com.joker.model.ServiceRuntimeException;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -27,16 +27,16 @@ public class JedisLockUtil {
     private AbstractJedisLockFactory supplyChainJedisLockFactory;
 
 
-    public <T> T tryLock(String key, Func func) {
+    public <T> T tryLock(String key, Func1 func) {
         return tryLock(key, func, 0);
     }
 
-    public <T> T tryLockOrWait(String key, Func func) {
+    public <T> T tryLockOrWait(String key, Func1 func) {
         // lock 占不到锁到时候，等待 500 毫秒
         return tryLock(key, func, 500);
     }
 
-    public <T> T tryLock(String key, Func func, int timeout) {
+    public <T> T tryLock(String key, Func1 func, int timeout) {
         if (StringUtils.isEmpty(key)) {
             throw new RuntimeException("创建分布式锁时未传入key");
         }
@@ -75,7 +75,7 @@ public class JedisLockUtil {
         return tryLock(key, 0);
     }
 
-    public <T> T batchTryLock(List<String> keyList, Func<T> func) {
+    public <T> T batchTryLock(List<String> keyList, Func1<T> func) {
         List<JedisLock> jedisLockList = new ArrayList<>();
         for (String key : keyList) {
             JedisLock jedisLock = supplyChainJedisLockFactory.buildLock(key);

@@ -5,12 +5,10 @@ import com.google.common.base.Joiner;
 import com.google.common.collect.HashMultiset;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Multiset;
+import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.joker.config.Constants;
-import com.joker.entity.DataMerge;
-import com.joker.entity.Func2;
-import com.joker.entity.Func3;
-import com.joker.entity.PageParameter;
+import com.joker.entity.*;
 import com.joker.test.ObjectSizeCalculator;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.RandomStringUtils;
@@ -336,6 +334,33 @@ public class DataUtil {
             e.printStackTrace();
         }
         return Lists.newArrayList();
+    }
+
+    /**
+     * 去重复
+     */
+    public static <T> List<T> distinct(List<T> list) {
+        return distinct(list, k -> k);
+    }
+
+    /**
+     * 去重复
+     */
+    public static <T, R> List<T> distinct(List<T> list, Func2<R, T> func) {
+        if (CollectionUtils.isEmpty(list)) {
+            return Lists.newArrayList();
+        }
+
+        List<T> keyList = Lists.newArrayList();
+        Set<R> uniqueValueSet = Sets.newHashSet();
+        for (T t : list) {
+            if (t != null) {
+                if (uniqueValueSet.add(func.invoke(t))) {
+                    keyList.add(t);
+                }
+            }
+        }
+        return keyList;
     }
 
 

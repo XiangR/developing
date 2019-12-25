@@ -1,6 +1,6 @@
 package com.joker.utils.redis;
 
-import com.joker.entity.Func;
+import com.joker.entity.Func1;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import redis.clients.jedis.Jedis;
@@ -152,7 +152,7 @@ public class JedisLock {
      * @date 2018-08-21 10:34
      * @note sxx@2018-08-21 10:34创建
      */
-    public static <T> T lockThenInvoke(String namespace, String key, int timeoutMillis, int expiryTimeMillis, Func<T> function) throws Exception {
+    public static <T> T lockThenInvoke(String namespace, String key, int timeoutMillis, int expiryTimeMillis, Func1<T> function) throws Exception {
         JedisLock lock = new JedisLock(namespace, key, expiryTimeMillis);
         T result = null;
         if (lock.tryLock(timeoutMillis, TimeUnit.MILLISECONDS)) {
@@ -182,7 +182,7 @@ public class JedisLock {
      * @date 2018-08-21 10:34
      * @note sxx@2018-08-21 10:34创建
      */
-    public static <T> T lockThenInvoke(String namespace, String key, Func<T> function) throws Exception {
+    public static <T> T lockThenInvoke(String namespace, String key, Func1<T> function) throws Exception {
         return JedisLock.lockThenInvoke(namespace, key, 0, DEFAULT_EXPIRY_TIME_MILLIS, function);
     }
 
@@ -200,7 +200,7 @@ public class JedisLock {
      * @date 2018-08-21 10:34
      * @note sxx@2018-08-21 10:34创建
      */
-    public static <T> T lockThenInvoke(String namespace, String key, int timeoutMillis, Func<T> function) throws Exception {
+    public static <T> T lockThenInvoke(String namespace, String key, int timeoutMillis, Func1<T> function) throws Exception {
         return JedisLock.lockThenInvoke(namespace, key, timeoutMillis, DEFAULT_EXPIRY_TIME_MILLIS, function);
     }
 
