@@ -235,6 +235,19 @@
             <version>1.8.2</version>
         </dependency>
 
+        <!--    excel     -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi</artifactId>
+            <version>3.10-FINAL</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>3.10-FINAL</version>
+        </dependency>
+        <!--    excel     -->
+
     </dependencies>
 
     <build>
