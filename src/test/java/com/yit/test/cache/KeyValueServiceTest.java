@@ -2,8 +2,10 @@ package com.yit.test.cache;
 
 import com.alibaba.dubbo.common.utils.CollectionUtils;
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.joker.cache.KeyValueService;
 import com.yit.test.BaseTest;
 import com.yit.test.entity.Person;
@@ -11,9 +13,12 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class KeyValueServiceTest extends BaseTest {
 
@@ -282,6 +287,86 @@ public class KeyValueServiceTest extends BaseTest {
         Assert.assertTrue(mgetLast.keySet().containsAll(secondList));
 
         keyValueService.del(category, folder, keyList);
+    }
+
+    @Test
+    public void test_mget_cache_refresh_TC5() throws ExecutionException, InterruptedException {
+
+        ThreadPoolExecutor EXECUTOR = new ThreadPoolExecutor(20, 20, 30, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(1024),
+                new ThreadFactoryBuilder().build(),
+                (r, executor) -> {
+                    try {
+                        executor.getQueue().put(r);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+        );
+
+        List<Integer> keyList = Lists.newArrayList();
+
+        keyList.add(11000001);
+        keyList.add(21000001);
+        keyList.add(31000001);
+        keyList.add(41000001);
+        keyList.add(51000001);
+        keyList.add(61000001);
+
+        // 预处理
+        keyValueService.del(category, folder, keyList);
+
+        AtomicInteger integer = new AtomicInteger();
+
+        List<JSONObject> remark = Collections.synchronizedList(Lists.newArrayList());
+
+        for (int i = 0; i < 60; i++) {
+
+            List<Callable<Map<Integer, Person>>> taskList = Lists.newArrayList();
+            for (int j = 0; j < 10; j++) {
+                taskList.add(() -> keyValueService.mget(category, folder, keyList, 3, 6, false, missKeys -> invoke(missKeys, integer, remark)));
+            }
+
+            List<Future<Map<Integer, Person>>> futures = EXECUTOR.invokeAll(taskList);
+
+            Assert.assertEquals(10, futures.size());
+            for (Future<Map<Integer, Person>> future : futures) {
+                Map<Integer, Person> integerPersonMap = future.get();
+                Assert.assertEquals(6, integerPersonMap.size());
+                for (Map.Entry<Integer, Person> entry : integerPersonMap.entrySet()) {
+                    Assert.assertTrue(keyList.contains(entry.getKey()));
+                    Assert.assertNotNull(entry.getValue());
+                    Person value = entry.getValue();
+                    Assert.assertEquals((int) entry.getKey(), value.key);
+                }
+            }
+
+            sleep(1);
+        }
+
+        System.out.println(remark);
+        System.out.println("invoke count total:" + integer.get());
+        keyValueService.del(category, folder, keyList);
+    }
+
+    private Map<Integer, Person> invoke(List<Integer> missKeys, AtomicInteger integer, List<JSONObject> remark) {
+        int i = integer.incrementAndGet();
+
+        LocalDateTime now = LocalDateTime.now();
+        String time = now.toString();
+        String timeStr = time.substring(0, time.length() - 4).replace("T", " ");
+        JSONObject object = new JSONObject();
+        object.put("index", i);
+        object.put("timeStr", timeStr);
+        object.put("time", now);
+        object.put("param", missKeys);
+        object.put("paramSize", missKeys.size());
+        remark.add(object);
+        Map<Integer, Person> innerMap = Maps.newHashMap();
+        for (Integer missKey : missKeys) {
+            innerMap.put(missKey, new Person(missKey, missKey, String.format("name-%s", missKey)));
+        }
+        return innerMap;
     }
 
     private void sleep(int seconds) {
