@@ -4,11 +4,15 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.TypeReference;
 import com.alibaba.fastjson.parser.ParserConfig;
 import com.alibaba.fastjson.serializer.SerializerFeature;
+import com.google.common.collect.Lists;
 import com.yit.test.entity.KeyValueObject;
 import com.yit.test.entity.KeyValueTest;
 import com.yit.test.entity.Person;
+import com.yit.test.entity.PersonParent;
 import org.junit.Assert;
 import org.junit.Test;
+
+import java.util.List;
 
 public class ParseTest {
 
@@ -76,6 +80,32 @@ public class ParseTest {
         String string = JSON.toJSONString(keyValueTest, SerializerFeature.WriteClassName, SerializerFeature.DisableCircularReferenceDetect);
 
         KeyValueTest<String, Person> parse = parse(string);
+
+        Assert.assertEquals(parse.getKey(), keyValueTest.getKey());
+        Assert.assertEquals(parse.getObject(), keyValueTest.getObject());
+    }
+
+    @Test
+    public void test_parse_5() {
+
+        Person parentP = new Person(100010, 60, "parent");
+        Person son1 = new Person(100010, 10, "son1");
+        Person son2 = new Person(100010, 10, "son2");
+        KeyValueTest<String, PersonParent> keyValueTest = new KeyValueTest<>();
+        keyValueTest.setKey(String.valueOf(10086));
+        PersonParent obj = new PersonParent();
+        obj.setCount(2);
+        obj.setPerson(parentP);
+        List<Person> list = Lists.newArrayList();
+        list.add(son1);
+        list.add(son2);
+        obj.setPersonList(list);
+        keyValueTest.setObject(obj);
+        keyValueTest.setLogicalExpireSeconds(1000);
+
+        String string = JSON.toJSONString(keyValueTest, SerializerFeature.WriteClassName, SerializerFeature.DisableCircularReferenceDetect);
+
+        KeyValueTest<String, PersonParent> parse = parse(string);
 
         Assert.assertEquals(parse.getKey(), keyValueTest.getKey());
         Assert.assertEquals(parse.getObject(), keyValueTest.getObject());
