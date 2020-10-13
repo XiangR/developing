@@ -15,7 +15,7 @@
         <slf4j_version>1.7.7</slf4j_version>
         <logback_version>1.1.2</logback_version>
         <!-- test libs -->
-        <junit_version>4.12</junit_version>
+        <junit_version>4.13.1</junit_version>
         <mockito_core_version>2.7.22</mockito_core_version>
 
         <dubbo_version>2.6.1</dubbo_version>
