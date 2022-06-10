@@ -18,7 +18,7 @@
         <junit_version>4.12</junit_version>
         <mockito_core_version>2.7.22</mockito_core_version>
 
-        <dubbo_version>2.6.1</dubbo_version>
+        <dubbo_version>2.6.12</dubbo_version>
     </properties>
 
     <dependencies>
